@@ -1,7 +1,8 @@
 import torch
 import numpy as np
 from dig.ggraph3D.utils import xyz2mol, collect_bond_dists, compute_mmd, compute_prop
-
+import rdkit.Chem as Chem
+from rdkit.Chem import rdDetermineBonds
 
 
 class RandGenEvaluator:
@@ -25,6 +26,7 @@ class RandGenEvaluator:
         """
 
         num_generated, num_valid = 0, 0
+        num_valid_rdkit = 0
         results = {}
 
         for num_atoms in mol_dicts:
@@ -34,9 +36,31 @@ class RandGenEvaluator:
             for atomic_number, position in zip(atomic_numbers, positions):
                 _, valid = xyz2mol(atomic_number, position)
                 num_valid += 1 if valid else 0
+                
+                # Now, for RDKit's xyz2mol.
+                # Initialize an empty molecule and add atoms
+                mol = Chem.RWMol()
+                for num in atomic_number:
+                    mol.AddAtom(Chem.Atom(int(num)))
+
+                # Set atomic positions
+                conf = Chem.Conformer(mol.GetNumAtoms())
+                for i, pos in enumerate(position):
+                    conf.SetAtomPosition(i, tuple(int(coord) for coord in pos))
+                mol.AddConformer(conf)
+                
+                try:
+                    rdDetermineBonds.DetermineBonds(mol, charge=0)
+                except ValueError:
+                    continue
+                
+                num_valid_rdkit += 1
         
         print("Valid Ratio: {}/{} = {:.2f}%".format(num_valid, num_generated, num_valid/num_generated*100))
         results['valid_ratio'] = num_valid / num_generated * 100
+
+        print("Valid Ratio (from rdkit.Chem.rdDetermineBonds): {}/{} = {:.2f}%".format(num_valid_rdkit, num_generated, num_valid_rdkit/num_generated*100))
+        results['valid_ratio_rdkit'] = num_valid_rdkit / num_generated * 100
 
         return results
     
